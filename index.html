@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Audio Reactive Orb & Sakura Bloom</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05060a;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  #canvas-wrap { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #startScreen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 10;
+    background: radial-gradient(circle at 50% 40%, rgba(60,40,120,0.25), rgba(5,6,10,0.7) 70%);
+  }
+  #startScreen h1 {
+    color: #e8e2ff;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin: 0 0 4px 0;
+    text-align: center;
+    padding: 0 20px;
+  }
+  #startBtn, #arBtn {
+    padding: 16px 32px;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    background: rgba(120, 90, 255, 0.15);
+    color: #cfc8ff;
+    border: 1px solid rgba(150, 120, 255, 0.5);
+    border-radius: 999px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: all 0.2s ease;
+  }
+  #startBtn:hover, #arBtn:hover {
+    background: rgba(120, 90, 255, 0.3);
+    border-color: rgba(180, 150, 255, 0.9);
+  }
+  #arBtn {
+    background: rgba(255, 110, 180, 0.15);
+    border-color: rgba(255, 140, 200, 0.5);
+    color: #ffd6ec;
+  }
+  #arBtn:hover {
+    background: rgba(255, 110, 180, 0.3);
+    border-color: rgba(255, 170, 210, 0.9);
+  }
+  #arUnsupported {
+    color: rgba(255,255,255,0.35);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    max-width: 260px;
+    text-align: center;
+    display: none;
+  }
+
+  /* ---- AR-only overlay (shown via dom-overlay while an AR session is active) ---- */
+  #arOverlay { display: none; }
+  body.ar-active #arOverlay { display: block; }
+  body.ar-active #startScreen { display: none; }
+
+  #placeHint {
+    position: fixed;
+    top: 70px; left: 50%; transform: translateX(-50%);
+    color: #fff;
+    background: rgba(10, 8, 20, 0.55);
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+    text-align: center;
+    z-index: 10;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  #exitArBtn {
+    position: fixed;
+    bottom: 18px; right: 18px;
+    padding: 10px 18px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    background: rgba(20, 18, 30, 0.65);
+    color: #ffb3b3;
+    border: 1px solid rgba(255, 120, 120, 0.5);
+    border-radius: 999px;
+    cursor: pointer;
+    z-index: 10;
+    backdrop-filter: blur(6px);
+  }
+  #exitArBtn:hover { background: rgba(255, 80, 80, 0.25); }
+
+  /* ---- Persistent AR entry button, available from the normal 3D view in any mode ---- */
+  #arToggleBtn {
+    position: fixed;
+    bottom: 18px; right: 18px;
+    padding: 10px 18px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    background: rgba(255, 110, 180, 0.15);
+    color: #ffd6ec;
+    border: 1px solid rgba(255, 140, 200, 0.5);
+    border-radius: 999px;
+    cursor: pointer;
+    z-index: 10;
+    backdrop-filter: blur(6px);
+    display: none;
+    transition: all 0.2s ease;
+  }
+  #arToggleBtn:hover {
+    background: rgba(255, 110, 180, 0.3);
+    border-color: rgba(255, 170, 210, 0.9);
+  }
+  body.ar-active #arToggleBtn { display: none !important; }
+
+  #hud {
+    position: fixed;
+    bottom: 18px; left: 18px;
+    color: rgba(200, 190, 255, 0.55);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  #err {
+    position: fixed;
+    top: 20px; left: 50%; transform: translateX(-50%);
+    color: #ff8080;
+    font-size: 13px;
+    z-index: 10;
+    display: none;
+  }
+
+  #modeBar {
+    position: fixed;
+    top: 18px; left: 50%; transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 92vw;
+  }
+  .modeBtn {
+    padding: 8px 14px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    background: rgba(20, 18, 30, 0.55);
+    color: rgba(210, 200, 255, 0.75);
+    border: 1px solid rgba(140, 120, 220, 0.35);
+    border-radius: 999px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .modeBtn:hover {
+    border-color: rgba(180, 150, 255, 0.8);
+    color: #fff;
+  }
+  .modeBtn.active {
+    background: rgba(120, 90, 255, 0.35);
+    border-color: rgba(200, 180, 255, 0.9);
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+<div id="modeBar">
+  <button class="modeBtn" data-mode="random">Random</button>
+  <button class="modeBtn" data-mode="ember">Embers</button>
+  <button class="modeBtn" data-mode="white">White Burst</button>
+  <button class="modeBtn" data-mode="sakura">Pink Sakura Orb</button>
+  <button class="modeBtn" data-mode="venom">Venom</button>
+  <button class="modeBtn" data-mode="rainbow">Rainbow</button>
+  <button class="modeBtn" data-mode="chart">3D Chart</button>
+</div>
+
+<div id="startScreen">
+  <h1>Audio Reactive Orb</h1>
+  <button id="arBtn">Scan Room &amp; Place in AR</button>
+  <button id="startBtn">View in 3D (no AR)</button>
+  <div id="arUnsupported">AR isn't supported on this browser/device — you can still use the 3D view.</div>
+</div>
+
+<div id="arOverlay">
+  <div id="placeHint">Move your phone to scan a surface, then tap to place</div>
+  <button id="exitArBtn">Exit AR</button>
+</div>
+
+<div id="hud" style="display:none">bass / mid / high reactive · move mouse or tilt phone to orbit</div>
+<button id="arToggleBtn">Enter AR</button>
+<div id="err"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  const wrap = document.getElementById('canvas-wrap');
+  const startBtn = document.getElementById('startBtn');
+  const hud = document.getElementById('hud');
+  const errEl = document.getElementById('err');
+
+  // ---------- Three.js setup ----------
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(0, 0, 6);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  wrap.appendChild(renderer.domElement);
+
+  // ---------- World root: everything the AR camera "places" on a scanned surface ----------
+  // In normal (non-AR) 3D mode this just sits at the origin as before.
+  // In AR mode it starts hidden and snaps to the tapped surface point.
+  const worldRoot = new THREE.Group();
+  scene.add(worldRoot);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  const orbGroup = new THREE.Group();
+  worldRoot.add(orbGroup);
+
+  // ---------- Chaotic scribble-cloud (curl-noise particle trails) ----------
+  const PARTICLE_COUNT = 480;
+  const TRAIL_LEN = 13;
+  const SEG_PER_PARTICLE = TRAIL_LEN - 1;
+
+  const particles = [];
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const r = 0.15 + Math.random() * 0.35;
+    const theta = Math.acos(1 - 2 * Math.random());
+    const phi = 2 * Math.PI * Math.random();
+    const pos = new THREE.Vector3(
+      r * Math.sin(theta) * Math.cos(phi),
+      r * Math.cos(theta),
+      r * Math.sin(theta) * Math.sin(phi)
+    );
+    const history = new Float32Array(TRAIL_LEN * 3);
+    for (let h = 0; h < TRAIL_LEN; h++) {
+      history[h*3] = pos.x; history[h*3+1] = pos.y; history[h*3+2] = pos.z;
+    }
+    const isLeggy = Math.random() < 0.45;
+    particles.push({
+      pos,
+      history,
+      seed: Math.random() * 1000,
+      speedMul: 0.6 + Math.random() * 0.9,
+      driftBias: isLeggy ? -(0.5 + Math.random() * 0.6) : (Math.random() - 0.5) * 0.4,
+    });
+  }
+
+  const totalSegments = PARTICLE_COUNT * SEG_PER_PARTICLE;
+  const linePositions = new Float32Array(totalSegments * 2 * 3);
+  const wireGeometry = new THREE.BufferGeometry();
+  wireGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+  const lineColors = new Float32Array(totalSegments * 2 * 3).fill(1);
+  wireGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3));
+
+  const wireMaterial = new THREE.LineBasicMaterial({
+    color: 0x0a0a0a,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const wireMesh = new THREE.LineSegments(wireGeometry, wireMaterial);
+  orbGroup.add(wireMesh);
+
+  const glowMaterial = new THREE.LineBasicMaterial({
+    color: 0x6a3bff,
+    transparent: true,
+    opacity: 0.4,
+  });
+  const glowWireMesh = new THREE.LineSegments(wireGeometry.clone(), glowMaterial);
+  glowWireMesh.scale.set(1.015, 1.015, 1.015);
+  orbGroup.add(glowWireMesh);
+
+  function makeGlowTexture() {
+    const size = 256;
+    const cnv = document.createElement('canvas');
+    cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.3, 'rgba(255,255,255,0.75)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(cnv);
+  }
+  const glowTex = makeGlowTexture();
+  const coreSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex,
+    color: 0xffb020,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }));
+  coreSprite.scale.set(1.1, 1.1, 1.1);
+  orbGroup.add(coreSprite);
+
+  const orb = wireMesh;
+  const glowOrb = glowWireMesh;
+  const core = coreSprite;
+
+  // ---------- Ember sparks ----------
+  const SPARK_COUNT = 140;
+  const sparkData = [];
+  const sparkPositions = new Float32Array(SPARK_COUNT * 3);
+  for (let i = 0; i < SPARK_COUNT; i++) {
+    sparkData.push({
+      parentIndex: Math.floor(Math.random() * PARTICLE_COUNT),
+      flick: Math.random() * 10,
+      offset: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.25,
+        (Math.random() - 0.5) * 0.25,
+        (Math.random() - 0.5) * 0.25
+      ),
+    });
+  }
+  function makeSparkTexture() {
+    const size = 64;
+    const cnv = document.createElement('canvas');
+    cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, 'rgba(255,240,180,1)');
+    grad.addColorStop(0.4, 'rgba(255,170,40,0.9)');
+    grad.addColorStop(1, 'rgba(255,80,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    return new THREE.CanvasTexture(cnv);
+  }
+  const sparkGeometry = new THREE.BufferGeometry();
+  sparkGeometry.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+  const sparkMaterial = new THREE.PointsMaterial({
+    size: 0.09,
+    map: makeSparkTexture(),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const sparkPoints = new THREE.Points(sparkGeometry, sparkMaterial);
+  orbGroup.add(sparkPoints);
+
+  // ---------- Fluid Venom Metaballs ----------
+  const VENOM_BALL_COUNT = 4; // Tighter, more cohesive liquid structure
+  const venomBalls = [];
+  for (let i = 0; i < VENOM_BALL_COUNT; i++) {
+    venomBalls.push({
+      seed: Math.random() * 1000,
+      baseRadius: 0.45 + Math.random() * 0.2, 
+      orbit: 0.25 + Math.random() * 0.25,     
+    });
+  }
+  const venomUniforms = {
+    uBallPos: { value: venomBalls.map(() => new THREE.Vector3()) },
+    uBallRadius: { value: new Float32Array(VENOM_BALL_COUNT) },
+    uCameraPos: { value: new THREE.Vector3() },
+    uOpacity: { value: 0 },
+    uBass: { value: 0 },
+    uHigh: { value: 0 },
+    uTime: { value: 0 },
+  };
+  const venomMaterial = new THREE.ShaderMaterial({
+    uniforms: venomUniforms,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+      varying vec3 vLocalPosition;
+      void main() {
+        vLocalPosition = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      uniform vec3 uBallPos[${VENOM_BALL_COUNT}];
+      uniform float uBallRadius[${VENOM_BALL_COUNT}];
+      uniform vec3 uCameraPos;
+      uniform float uOpacity;
+      uniform float uBass;
+      uniform float uHigh;
+      uniform float uTime;
+      varying vec3 vLocalPosition;
+
+      float smin(float a, float b, float k) {
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        return mix(b, a, h) - k * h * (1.0 - h);
+      }
+
+      float map(vec3 p) {
+        // Core liquid body
+        float d = length(p) - (1.0 + uBass * 0.2);
+
+        // Blend orbiting blobs into the core smoothly
+        for (int i = 0; i < ${VENOM_BALL_COUNT}; i++) {
+          float di = length(p - uBallPos[i]) - uBallRadius[i];
+          d = smin(d, di, 0.6); 
+        }
+
+        // --- NEW MASSIVE SPIKE LOGIC ---
+        // Thicker frequency allows for longer stretch without breaking apart
+        float freq = 2.5; 
+        float timeSp = uTime * 2.0;
+        
+        float flow = sin(p.x * freq + timeSp) * cos(p.y * freq - timeSp * 0.8) * sin(p.z * freq + timeSp * 1.1);
+        
+        // Massive amplitude for long tendrils
+        float spikeAmp = 0.2 + uHigh * 2.5; 
+        float spikes = flow * spikeAmp;
+
+        d -= spikes;
+
+        // Safely scale down the raymarching steps so the extreme spikes don't clip
+        return d * 0.25; 
+      }
+
+      vec3 calcNormal(vec3 p) {
+        vec2 e = vec2(0.005, 0.0); 
+        return normalize(vec3(
+          map(p + e.xyy) - map(p - e.xyy),
+          map(p + e.yxy) - map(p - e.yxy),
+          map(p + e.yyx) - map(p - e.yyx)
+        ));
+      }
+
+      void main() {
+        vec3 ro = uCameraPos;
+        vec3 rd = normalize(vLocalPosition - uCameraPos);
+        float dist = length(vLocalPosition - uCameraPos) - 2.5;
+        dist = max(dist, 0.0);
+        vec3 pos = ro;
+        bool hit = false;
+        
+        for (int i = 0; i < 100; i++) {
+          pos = ro + rd * dist;
+          float d = map(pos);
+          if (abs(d) < 0.002) { hit = true; break; } 
+          dist += d;
+          if (dist > 15.0) break;
+        }
+        if (!hit) discard;
+
+        vec3 n = calcNormal(pos);
+        vec3 lightDir = normalize(vec3(0.5, 0.8, 0.6));
+        float diff = max(dot(n, lightDir), 0.0);
+        vec3 viewDir = -rd;
+        vec3 refl = reflect(-lightDir, n);
+        
+        float spec = pow(max(dot(refl, viewDir), 0.0), 60.0);
+        float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
+        
+        vec3 base = vec3(0.005, 0.01, 0.01); 
+        vec3 rim = vec3(0.2, 0.5, 0.8) * fresnel * (0.3 + uHigh * 0.7); 
+        
+        vec3 col = base * (0.1 + diff * 0.9) + spec * vec3(0.8, 0.9, 1.0) * (0.5 + uHigh * 0.5) + rim;
+        
+        gl_FragColor = vec4(col, uOpacity);
+      }
+    `,
+  });
+  const venomGeo = new THREE.PlaneGeometry(10, 10); // Slightly larger plane to fit the massive spikes
+  const venomMesh = new THREE.Mesh(venomGeo, venomMaterial);
+  venomMesh.position.z = 0;
+  venomMesh.visible = false;
+  worldRoot.add(venomMesh);
+
+  // ---------- Pink Sakura Bloom / Quantity Spawner ----------
+  function makeSakuraTexture() {
+    const size = 256;
+    const cnv = document.createElement('canvas');
+    cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    ctx.translate(cx, cy);
+    const petalLen = size * 0.42;
+    const petalWidth = size * 0.30;
+    for (let i = 0; i < 5; i++) {
+      ctx.save();
+      ctx.rotate((i / 5) * Math.PI * 2);
+      const grad = ctx.createLinearGradient(0, -petalLen, 0, -petalLen * 0.15);
+      grad.addColorStop(0, 'rgba(255,214,231,0.98)');
+      grad.addColorStop(1, 'rgba(255,100,160,0.98)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(0, -petalLen * 0.18);
+      ctx.bezierCurveTo(-petalWidth * 0.55, -petalLen * 0.55, -petalWidth * 0.45, -petalLen * 0.95, 0, -petalLen);
+      ctx.lineTo(-petalWidth * 0.06, -petalLen * 0.9);
+      ctx.lineTo(petalWidth * 0.06, -petalLen * 0.9);
+      ctx.lineTo(0, -petalLen);
+      ctx.bezierCurveTo(petalWidth * 0.45, -petalLen * 0.95, petalWidth * 0.55, -petalLen * 0.55, 0, -petalLen * 0.18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * size * 0.05;
+      const rad = size * (0.012 + Math.random() * 0.02);
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * r, Math.sin(a) * r, rad, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,240,245,0.95)';
+      ctx.fill();
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return new THREE.CanvasTexture(cnv);
+  }
+  
+  const sakuraTex = makeSakuraTexture();
+  const SAKURA_COUNT = 180;
+  const sakuraFlowers = [];
+  const sakuraGroup = new THREE.Group();
+  
+  for (let i = 0; i < SAKURA_COUNT; i++) {
+    const mat = new THREE.SpriteMaterial({
+      map: sakuraTex,
+      color: new THREE.Color().setHSL(0.92 + (Math.random() - 0.5) * 0.06, 0.65, 0.75 + Math.random() * 0.15),
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    const spr = new THREE.Sprite(mat);
+    const baseScale = 0.25 + Math.random() * 0.35;
+    spr.scale.set(baseScale, baseScale, 1);
+    sakuraGroup.add(spr);
+    sakuraFlowers.push({
+      sprite: spr,
+      progress: Math.random(), 
+      radius: 0.2 + Math.random() * 1.5,
+      angle: Math.random() * Math.PI * 2,
+      spinSpeed: (Math.random() - 0.5) * 1.5,
+      baseScale,
+      dropSpeed: 0.12 + Math.random() * 0.18, 
+    });
+  }
+  worldRoot.add(sakuraGroup);
+
+  const sakuraCore = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex,
+    color: 0xff66aa,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }));
+  sakuraCore.scale.set(1.4, 1.4, 1.4);
+  sakuraGroup.add(sakuraCore);
+
+  // ---------- True 3D Instanced Mesh Chart Audio Visualizer ----------
+  const BAR_COUNT = 64;
+  const barGeo = new THREE.BoxGeometry(0.1, 1, 0.1);
+  barGeo.translate(0, 0.5, 0); 
+  const barMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
+  const barMesh = new THREE.InstancedMesh(barGeo, barMat, BAR_COUNT);
+  
+  const barHeights = new Float32Array(BAR_COUNT);
+  const dummy = new THREE.Object3D(); 
+
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const hue = i / BAR_COUNT;
+    const col = new THREE.Color().setHSL(hue, 0.95, 0.6);
+    barMesh.setColorAt(i, col);
+  }
+  worldRoot.add(barMesh);
+  const rainbowColor = new THREE.Color();
+
+  // ---------- AR reticle (surface-scan indicator) ----------
+  const reticleGeo = new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI / 2);
+  const reticleMat = new THREE.MeshBasicMaterial({ color: 0xcfc8ff, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+  const reticle = new THREE.Mesh(reticleGeo, reticleMat);
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // ---------- Mode state ----------
+  let selectedMode = 'random';
+  let activeMode = 'ember';
+  const FLUID_MODES = ['ember', 'white', 'rainbow'];
+  const MODE_LIST = ['ember', 'white', 'sakura', 'venom', 'rainbow', 'chart'];
+  let lastModeSwitch = 0;
+  const MODE_DURATION = 7;
+
+  function setActiveMode(m) {
+    activeMode = m;
+    document.querySelectorAll('.modeBtn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === selectedMode);
+    });
+  }
+
+  document.querySelectorAll('.modeBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedMode = btn.dataset.mode;
+      if (selectedMode !== 'random') {
+        setActiveMode(selectedMode);
+      } else {
+        setActiveMode(MODE_LIST[Math.floor(Math.random() * MODE_LIST.length)]);
+      }
+      lastModeSwitch = clockElapsedRef.value;
+    });
+  });
+  document.querySelector('.modeBtn[data-mode="random"]').classList.add('active');
+
+  const clockElapsedRef = { value: 0 };
+
+  // ---------- Simplex Noise ----------
+  const NOISE = (function() {
+    const grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+    const p = [];
+    for (let i = 0; i < 256; i++) p[i] = Math.floor(Math.random() * 256);
+    const perm = new Array(512);
+    for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+    function dot(g, x, y, z) { return g[0]*x + g[1]*y + g[2]*z; }
+    return function simplex3(xin, yin, zin) {
+      const F3 = 1/3, G3 = 1/6;
+      let n0, n1, n2, n3;
+      const s = (xin+yin+zin)*F3;
+      const i = Math.floor(xin+s), j = Math.floor(yin+s), k = Math.floor(zin+s);
+      const t = (i+j+k)*G3;
+      const X0=i-t, Y0=j-t, Z0=k-t;
+      const x0=xin-X0, y0=yin-Y0, z0=zin-Z0;
+      let i1,j1,k1,i2,j2,k2;
+      if (x0>=y0) {
+        if (y0>=z0) { i1=1;j1=0;k1=0; i2=1;j2=1;k2=0; }
+        else if (x0>=z0) { i1=1;j1=0;k1=0; i2=1;j2=0;k2=1; }
+        else { i1=0;j1=0;k1=1; i2=1;j2=0;k2=1; }
+      } else {
+        if (y0<z0) { i1=0;j1=0;k1=1; i2=0;j2=1;k2=1; }
+        else if (x0<z0) { i1=0;j1=1;k1=0; i2=0;j2=1;k2=1; }
+        else { i1=0;j1=1;k1=0; i2=1;j2=1;k2=0; }
+      }
+      const x1=x0-i1+G3, y1=y0-j1+G3, z1=z0-k1+G3;
+      const x2=x0-i2+2*G3, y2=y0-j2+2*G3, z2=z0-k2+2*G3;
+      const x3=x0-1+3*G3, y3=y0-1+3*G3, z3=z0-1+3*G3;
+      const ii=i&255, jj=j&255, kk=k&255;
+      let t0=0.6-x0*x0-y0*y0-z0*z0;
+      if (t0<0) n0=0; else { t0*=t0; n0=t0*t0*dot(grad3[perm[ii+perm[jj+perm[kk]]]%12], x0,y0,z0); }
+      let t1=0.6-x1*x1-y1*y1-z1*z1;
+      if (t1<0) n1=0; else { t1*=t1; n1=t1*t1*dot(grad3[perm[ii+i1+perm[jj+j1+perm[kk+k1]]]%12], x1,y1,z1); }
+      let t2=0.6-x2*x2-y2*y2-z2*z2;
+      if (t2<0) n2=0; else { t2*=t2; n2=t2*t2*dot(grad3[perm[ii+i2+perm[jj+j2+perm[kk+k2]]]%12], x2,y2,z2); }
+      let t3=0.6-x3*x3-y3*y3-z3*z3;
+      if (t3<0) n3=0; else { t3*=t3; n3=t3*t3*dot(grad3[perm[ii+1+perm[jj+1+perm[kk+1]]]%12], x3,y3,z3); }
+      return 32*(n0+n1+n2+n3);
+    };
+  })();
+
+  // ---------- Input tracking ----------
+  let targetRotX = 0, targetRotY = 0;
+  window.addEventListener('mousemove', (e) => {
+    targetRotY = (e.clientX / window.innerWidth - 0.5) * 1.2;
+    targetRotX = (e.clientY / window.innerHeight - 0.5) * 1.2;
+  });
+  window.addEventListener('deviceorientation', (e) => {
+    if (e.gamma !== null && e.beta !== null) {
+      targetRotY = THREE.MathUtils.clamp(e.gamma / 45, -1, 1) * 0.6;
+      targetRotX = THREE.MathUtils.clamp((e.beta - 45) / 45, -1, 1) * 0.6;
+    }
+  });
+
+  // ---------- Audio initialization ----------
+  let analyser, dataArray, bufferLength;
+  let audioReady = false;
+
+  async function initAudio() {
+    if (audioReady) return true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.6;
+      bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+      source.connect(analyser);
+
+      audioReady = true;
+      hud.style.display = 'block';
+      return true;
+    } catch (err) {
+      errEl.textContent = 'Mic access denied or unavailable: ' + err.message;
+      errEl.style.display = 'block';
+      return false;
+    }
+  }
+
+  // ---------- AR (WebXR hit-test) ----------
+  const arBtn = document.getElementById('arBtn');
+  const arToggleBtn = document.getElementById('arToggleBtn');
+  const arUnsupportedEl = document.getElementById('arUnsupported');
+  const exitArBtn = document.getElementById('exitArBtn');
+  const placeHint = document.getElementById('placeHint');
+
+  let xrSession = null;
+  let hitTestSource = null;
+  let hitTestSourceRequested = false;
+  let arPlaced = false;
+  let inAR = false;
+  let arSupported = false;
+
+  // ---- Plain 3D view (no AR) ----
+  // Whatever visual mode is currently selected (see modeBar above) keeps playing;
+  // entering/exiting AR never resets it, so AR works the same in every mode.
+  startBtn.addEventListener('click', async () => {
+    const ok = await initAudio();
+    if (ok) {
+      document.getElementById('startScreen').style.display = 'none';
+      if (arSupported) arToggleBtn.style.display = 'block';
+    }
+  });
+
+  async function checkARSupport() {
+    if (navigator.xr && navigator.xr.isSessionSupported) {
+      try {
+        arSupported = await navigator.xr.isSessionSupported('immersive-ar');
+      } catch (e) {
+        arSupported = false;
+      }
+    } else {
+      arSupported = false;
+    }
+    if (!arSupported) {
+      arBtn.style.display = 'none';
+      arToggleBtn.style.display = 'none';
+      arUnsupportedEl.style.display = 'block';
+    }
+  }
+  checkARSupport();
+
+  // Shared entry point used both by the start-screen button and by the
+  // persistent "Enter AR" button, so AR can be launched from any mode at any time.
+  async function enterAR() {
+    const ok = await initAudio();
+    if (!ok) return;
+    try {
+      const sessionInit = {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay', 'local-floor'],
+        domOverlay: { root: document.body }
+      };
+      xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
+      renderer.xr.setReferenceSpaceType('local');
+      await renderer.xr.setSession(xrSession);
+      onARSessionStarted();
+    } catch (err) {
+      errEl.textContent = 'Could not start AR: ' + err.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  arBtn.addEventListener('click', enterAR);
+  arToggleBtn.addEventListener('click', enterAR);
+
+  function onARSessionStarted() {
+    inAR = true;
+    arPlaced = false;
+    hitTestSourceRequested = false;
+    hitTestSource = null;
+    worldRoot.visible = false;
+    reticle.visible = false;
+    document.body.classList.add('ar-active');
+    document.getElementById('startScreen').style.display = 'none';
+    arToggleBtn.style.display = 'none';
+    placeHint.textContent = 'Move your phone to scan a surface, then tap to place';
+    placeHint.style.display = 'block';
+    hud.style.display = 'none';
+
+    xrSession.addEventListener('select', onARSelect);
+    xrSession.addEventListener('end', onARSessionEnded);
+  }
+
+  function onARSelect() {
+    if (!reticle.visible) return;
+    worldRoot.position.setFromMatrixPosition(reticle.matrix);
+    worldRoot.quaternion.setFromRotationMatrix(reticle.matrix);
+    worldRoot.scale.set(0.35, 0.35, 0.35);
+    worldRoot.visible = true;
+    arPlaced = true;
+    placeHint.textContent = 'Placed! Tap another surface point to move it';
+  }
+
+  function onARSessionEnded() {
+    inAR = false;
+    arPlaced = false;
+    hitTestSource = null;
+    hitTestSourceRequested = false;
+    reticle.visible = false;
+    document.body.classList.remove('ar-active');
+    worldRoot.visible = true;
+    worldRoot.position.set(0, 0, 0);
+    worldRoot.quaternion.identity();
+    worldRoot.scale.set(1, 1, 1);
+    // Return to the normal 3D view (not the start screen) so whichever mode
+    // was playing keeps playing, with the option to re-enter AR at any time.
+    document.getElementById('startScreen').style.display = 'none';
+    if (arSupported) arToggleBtn.style.display = 'block';
+    hud.style.display = audioReady ? 'block' : 'none';
+    xrSession = null;
+  }
+
+  exitArBtn.addEventListener('click', () => {
+    if (xrSession) xrSession.end();
+  });
+
+  function getBands() {
+    if (!audioReady) return { bass: 0, mid: 0, high: 0, overall: 0 };
+    analyser.getByteFrequencyData(dataArray);
+    const n = bufferLength;
+    const bassEnd = Math.floor(n * 0.08);
+    const midEnd = Math.floor(n * 0.35);
+
+    let bass = 0, mid = 0, high = 0;
+    
+    const noiseGate = 15; 
+
+    for (let i = 0; i < bassEnd; i++) bass += Math.max(0, dataArray[i] - noiseGate);
+    for (let i = bassEnd; i < midEnd; i++) mid += Math.max(0, dataArray[i] - noiseGate);
+    for (let i = midEnd; i < n; i++) high += Math.max(0, dataArray[i] - noiseGate);
+
+    bass /= bassEnd || 1;
+    mid /= (midEnd - bassEnd) || 1;
+    high /= (n - midEnd) || 1;
+
+    let overall = 0;
+    for (let i = 0; i < n; i++) overall += Math.max(0, dataArray[i] - noiseGate);
+    overall /= n;
+
+    return {
+      bass: Math.min(1, bass / 240),
+      mid: Math.min(1, mid / 240),
+      high: Math.min(1, high / 240),
+      overall: Math.min(1, overall / 240)
+    };
+  }
+
+  const MODE_PARAMS = {
+    ember:   { pull: 0.03,  spreadMul: 1.05, containment: 2.6, cLow: 0x0a0a0d, cHigh: 0x2a1608, glowHue: 0.08, glowSat: 0.85, glowLight: 0.55, sparkAmt: 1 },
+    white:   { pull: 0.05,  spreadMul: 0.75, containment: 1.9, cLow: 0x0a0a0d, cHigh: 0xffffff, glowHue: 0.0,  glowSat: 0.04, glowLight: 0.8,  sparkAmt: 0 },
+    rainbow: { pull: 0.03,  spreadMul: 1.1,  containment: 2.5, cLow: 0x0a0a0d, cHigh: 0xffffff, glowHue: 0.5,  glowSat: 0.85, glowLight: 0.6,  sparkAmt: 0 },
+  };
+  const modeWeight = { ember: 1, white: 0, sakura: 0, venom: 0, rainbow: 0, chart: 0 };
+
+  const clock = new THREE.Clock();
+  let lastTime = 0;
+  let sBass = 0, sMid = 0, sHigh = 0;
+  let bounceY = 0;
+
+  function render(timestamp, frame) {
+    // ---- WebXR hit-test: find real-world surfaces and drive the placement reticle ----
+    if (frame) {
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      const session = renderer.xr.getSession();
+
+      if (!hitTestSourceRequested) {
+        hitTestSourceRequested = true;
+        session.requestReferenceSpace('viewer').then((viewerSpace) => {
+          session.requestHitTestSource({ space: viewerSpace }).then((source) => {
+            hitTestSource = source;
+          });
+        }).catch(() => {});
+      }
+
+      if (hitTestSource) {
+        const hitTestResults = frame.getHitTestResults(hitTestSource);
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const pose = hit.getPose(referenceSpace);
+          reticle.visible = true;
+          reticle.matrix.fromArray(pose.transform.matrix);
+        } else {
+          reticle.visible = false;
+        }
+      }
+    }
+
+    const t = clock.getElapsedTime();
+    const dt = t - lastTime;
+    lastTime = t;
+    
+    clockElapsedRef.value = t;
+    const bands = getBands();
+
+    sBass += (bands.bass - sBass) * (bands.bass > sBass ? 0.55 : 0.16);
+    sMid  += (bands.mid  - sMid)  * (bands.mid  > sMid  ? 0.45 : 0.20);
+    sHigh += (bands.high - sHigh) * (bands.high > sHigh ? 0.65 : 0.25);
+
+    if (selectedMode === 'random' && t - lastModeSwitch > MODE_DURATION) {
+      let next = activeMode;
+      while (next === activeMode) next = MODE_LIST[Math.floor(Math.random() * MODE_LIST.length)];
+      setActiveMode(next);
+      lastModeSwitch = t;
+    }
+
+    MODE_LIST.forEach(m => {
+      const target = (m === activeMode) ? 1 : 0;
+      modeWeight[m] += (target - modeWeight[m]) * 0.06;
+    });
+
+    const fluidWeight = modeWeight.ember + modeWeight.white + modeWeight.rainbow;
+    const venomWeight = modeWeight.venom;
+    const sakuraWeight = modeWeight.sakura;
+    const chartWeight = modeWeight.chart;
+
+    let pull = 0, spreadMul = 0, containment = 0, sparkAmt = 0;
+    const cLow = new THREE.Color(0x0a0a0d);
+    let cHigh = new THREE.Color(0, 0, 0);
+    let glowHue = 0, glowSat = 0, glowLight = 0;
+    FLUID_MODES.forEach(m => {
+      const w = fluidWeight > 0.001 ? modeWeight[m] / fluidWeight : (m === 'ember' ? 1 : 0);
+      const P = MODE_PARAMS[m];
+      pull += P.pull * w;
+      spreadMul += P.spreadMul * w;
+      containment += P.containment * w;
+      sparkAmt += P.sparkAmt * w;
+      cHigh.r += new THREE.Color(P.cHigh).r * w;
+      cHigh.g += new THREE.Color(P.cHigh).g * w;
+      cHigh.b += new THREE.Color(P.cHigh).b * w;
+      glowHue += P.glowHue * w;
+      glowSat += P.glowSat * w;
+      glowLight += P.glowLight * w;
+    });
+    if (modeWeight.rainbow > 0.001) {
+      const rw = fluidWeight > 0.001 ? modeWeight.rainbow / fluidWeight : 0;
+      const cycleHue = (t * 0.08) % 1;
+      glowHue = glowHue * (1 - rw) + cycleHue * rw;
+      glowSat = glowSat * (1 - rw) + 0.85 * rw;
+    }
+
+    // ---- Curl noise field calculation ----
+    const freq = 0.9 + sMid * 0.6;
+    const flowSpeed = 0.5 + sMid * 1.3;
+    const wander = 0.6 + sHigh * 1.8;
+    const spread = (0.6 + sBass * 1.5) * spreadMul;
+
+    const posArr = wireGeometry.attributes.position.array;
+    const colArr = wireGeometry.attributes.color.array;
+    let p = 0, c = 0;
+    const rainbowW = modeWeight.rainbow;
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const P = particles[i];
+      const pos = P.pos;
+
+      const wx = pos.x * freq, wy = pos.y * freq, wz = pos.z * freq;
+      const warpX = NOISE(wx * 0.4 + 5.2, wy * 0.4, wz * 0.4 + t * 0.2) * 0.8;
+      const warpY = NOISE(wx * 0.4, wy * 0.4 + 9.1, wz * 0.4 + t * 0.2) * 0.8;
+      const warpZ = NOISE(wx * 0.4, wy * 0.4, wz * 0.4 + 3.3 + t * 0.2) * 0.8;
+
+      const vx = NOISE((wx + warpX) + 13.1, (wy + warpY), (wz + warpZ) + t * flowSpeed + P.seed);
+      const vy = NOISE((wx + warpX), (wy + warpY) + 71.3 + P.seed, (wz + warpZ) + t * flowSpeed);
+      const vz = NOISE((wx + warpX), (wy + warpY), (wz + warpZ) + 47.7 + t * flowSpeed + P.seed);
+
+      const toCenter = pos.clone().multiplyScalar(-pull);
+      const throbForce = pos.clone().normalize().multiplyScalar(sBass * 0.09); 
+      
+      pos.x += vx * wander * spread * 0.05 + toCenter.x + throbForce.x;
+      pos.y += vy * wander * spread * 0.05 + toCenter.y + P.driftBias * 0.035 + throbForce.y;
+      pos.z += vz * wander * spread * 0.05 + toCenter.z + throbForce.z;
+
+      const currentR = pos.length();
+      const flexLimit = containment + sBass * 1.5; 
+      if (currentR > flexLimit) {
+        pos.lerp(pos.clone().normalize().multiplyScalar(flexLimit), 0.1); 
+      }
+
+      const h = P.history;
+      for (let k = TRAIL_LEN - 1; k > 0; k--) {
+        h[k*3] = h[(k-1)*3]; h[k*3+1] = h[(k-1)*3+1]; h[k*3+2] = h[(k-1)*3+2];
+      }
+      h[0] = pos.x; h[1] = pos.y; h[2] = pos.z;
+
+      let cr = 1, cg = 1, cb = 1;
+      if (rainbowW > 0.001) {
+        const hue = ((i / PARTICLE_COUNT) + t * 0.06) % 1;
+        rainbowColor.setHSL(hue, 0.9, 0.5 + sBass * 0.2);
+        cr = 1 + (rainbowColor.r - 1) * rainbowW;
+        cg = 1 + (rainbowColor.g - 1) * rainbowW;
+        cb = 1 + (rainbowColor.b - 1) * rainbowW;
+      }
+
+      for (let s = 0; s < SEG_PER_PARTICLE; s++) {
+        posArr[p++] = h[s*3];     posArr[p++] = h[s*3+1];     posArr[p++] = h[s*3+2];
+        posArr[p++] = h[(s+1)*3]; posArr[p++] = h[(s+1)*3+1]; posArr[p++] = h[(s+1)*3+2];
+        colArr[c++] = cr; colArr[c++] = cg; colArr[c++] = cb;
+        colArr[c++] = cr; colArr[c++] = cg; colArr[c++] = cb;
+      }
+    }
+    wireGeometry.attributes.position.needsUpdate = true;
+    wireGeometry.attributes.color.needsUpdate = true;
+    glowWireMesh.geometry.attributes.position.array.set(posArr);
+    glowWireMesh.geometry.attributes.position.needsUpdate = true;
+
+    const energy = THREE.MathUtils.clamp(sBass * 0.55 + sMid * 0.25 + sHigh * 0.35, 0, 1.3) / 1.3;
+    const wireColor = new THREE.Color().copy(cLow).lerp(cHigh, energy);
+    wireMaterial.color.copy(wireColor);
+    wireMaterial.opacity = (0.75 + energy * 0.2) * fluidWeight;
+
+    glowMaterial.color.setHSL(glowHue, glowSat, glowLight - sHigh * 0.05 + sBass * 0.1);
+    glowMaterial.opacity = (0.3 + energy * 0.3) * fluidWeight;
+
+    const coreScale = 0.7 + sBass * 2.6 + sHigh * 0.2;
+    core.scale.set(coreScale, coreScale, coreScale);
+    core.material.opacity = (0.75 + sBass * 0.25) * fluidWeight;
+    core.material.color.setHSL(glowHue, glowSat, THREE.MathUtils.clamp(glowLight + sBass * 0.15, 0.05, 0.9));
+
+    orbGroup.rotation.y += 0.002 + sHigh * 0.008;
+    if (!inAR) {
+      orbGroup.rotation.x += (targetRotX - orbGroup.rotation.x) * 0.03;
+      orbGroup.rotation.y += (targetRotY * 0.3);
+    }
+
+    const punch = 1 + sBass * 0.65 + Math.max(0, sBass - 0.4) * 1.1;
+    orbGroup.scale.set(punch, punch, punch);
+    const targetBounce = sBass * 0.45;
+    bounceY += (targetBounce - bounceY) * (targetBounce > bounceY ? 0.6 : 0.14);
+    orbGroup.position.y = bounceY;
+
+    orb.visible = fluidWeight > 0.01;
+    glowOrb.visible = fluidWeight > 0.01;
+    core.visible = fluidWeight > 0.01;
+
+    // ---- Ember sparks ----
+    const sparkArr = sparkGeometry.attributes.position.array;
+    const targetSparkOpacity = sparkAmt * fluidWeight * (0.6 + sBass * 0.4);
+    sparkMaterial.opacity += (targetSparkOpacity - sparkMaterial.opacity) * 0.1;
+    sparkPoints.visible = sparkMaterial.opacity > 0.01;
+    if (sparkPoints.visible) {
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        const sd = sparkData[i];
+        const parent = particles[sd.parentIndex].pos;
+        const flick = 1 + Math.sin(t * 6 + sd.flick) * 0.15;
+        sparkArr[i*3]   = (parent.x + sd.offset.x) * flick;
+        sparkArr[i*3+1] = (parent.y + sd.offset.y) * flick;
+        sparkArr[i*3+2] = (parent.z + sd.offset.z) * flick;
+      }
+      sparkGeometry.attributes.position.needsUpdate = true;
+    }
+
+    // ---- Venom shader update ----
+    venomMesh.visible = venomWeight > 0.01;
+    if (venomMesh.visible) {
+      const drift = 0.5 + sMid * 1.5;
+      for (let i = 0; i < VENOM_BALL_COUNT; i++) {
+        const b = venomBalls[i];
+        const ang = t * (0.2 + b.orbit * 0.1) + b.seed;
+        const wobX = NOISE(b.seed, t * 0.4 * drift, 0) * 0.25;
+        const wobY = NOISE(b.seed + 40, t * 0.4 * drift, 0) * 0.2;
+        const wobZ = NOISE(b.seed + 80, t * 0.4 * drift, 0) * 0.25;
+        const bp = venomUniforms.uBallPos.value[i];
+        bp.set(
+          Math.cos(ang) * b.orbit * 0.6 + wobX,
+          Math.sin(ang * 0.8) * b.orbit * 0.5 + wobY,
+          Math.sin(ang) * b.orbit * 0.6 + wobZ
+        );
+        venomUniforms.uBallRadius.value[i] = b.baseRadius * (1 + sBass * 0.5);
+      }
+      venomUniforms.uOpacity.value += (venomWeight - venomUniforms.uOpacity.value) * 0.12;
+      venomUniforms.uBass.value = sBass;
+      venomUniforms.uHigh.value = sHigh;
+      venomUniforms.uTime.value = t;
+      venomUniforms.uCameraPos.value.copy(worldRoot.worldToLocal(camera.getWorldPosition(new THREE.Vector3())));
+    } else {
+      venomUniforms.uOpacity.value += (0 - venomUniforms.uOpacity.value) * 0.12;
+    }
+
+    // ---- Optimized Pink Sakura Bloom / Falling Petals ----
+    sakuraGroup.visible = sakuraWeight > 0.01;
+    if (sakuraGroup.visible) {
+      const activeQuantity = Math.floor(SAKURA_COUNT * (0.1 + Math.min(1, sHigh + sMid) * 0.9)); 
+      
+      sakuraFlowers.forEach((f, index) => {
+        f.progress += dt * f.dropSpeed; 
+        if(f.progress > 1.0) f.progress -= 1.0; 
+
+        const currentY = 2.2 - f.progress * 4.4;
+        const driftAngle = f.angle + t * 0.3; 
+        const curRadius = f.radius * (0.8 + Math.sin(f.progress * Math.PI) * 0.3);
+
+        f.sprite.position.set(
+          Math.cos(driftAngle) * curRadius,
+          currentY,
+          Math.sin(driftAngle) * curRadius
+        );
+        f.sprite.material.rotation += f.spinSpeed * 0.03;
+
+        const alphaFade = Math.sin(f.progress * Math.PI); 
+        const targetOpacity = (index < activeQuantity) ? alphaFade * sakuraWeight * 0.95 : 0;
+        
+        f.sprite.material.opacity += (targetOpacity - f.sprite.material.opacity) * 0.1;
+        f.sprite.scale.set(f.baseScale, f.baseScale, 1);
+      });
+
+      const sCore = 1.1 + sBass * 1.5;
+      sakuraCore.scale.set(sCore, sCore, sCore);
+      sakuraCore.material.opacity = (0.6 + sBass * 0.4) * sakuraWeight;
+
+      sakuraGroup.rotation.y += (targetRotY * 0.25 - sakuraGroup.rotation.y) * 0.05;
+      sakuraGroup.rotation.x += (targetRotX * 0.25 - sakuraGroup.rotation.x) * 0.05;
+    } else {
+      sakuraFlowers.forEach(f => { f.sprite.material.opacity += (0 - f.sprite.material.opacity) * 0.1; });
+      sakuraCore.material.opacity += (0 - sakuraCore.material.opacity) * 0.1;
+    }
+
+    // ---- True 3D Instanced Mesh Bar Audio Visualizer ----
+    barMesh.visible = chartWeight > 0.01;
+    if (barMesh.visible && dataArray) {
+      const bins = bufferLength || 1;
+      const usableStart = 2;
+      const usableEnd = Math.floor(bins * 0.75);
+      
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const tNorm = i / (BAR_COUNT - 1);
+        const binIndex = usableStart + Math.floor(Math.pow(tNorm, 1.5) * (usableEnd - usableStart));
+        
+        const raw = Math.max(0, (dataArray[binIndex] - 15)) / 240; 
+        
+        barHeights[i] += (raw - barHeights[i]) * 0.4;
+        
+        const h = Math.max(0.01, barHeights[i] * 3.2);
+        const angle = (i / BAR_COUNT) * Math.PI * 2;
+        const ringRadius = 1.6 + sBass * 0.3;
+        
+        const x = Math.cos(angle) * ringRadius;
+        const z = Math.sin(angle) * ringRadius;
+        
+        dummy.position.set(x, -1.2, z);
+        dummy.scale.set(1, h, 1);
+        dummy.updateMatrix();
+        barMesh.setMatrixAt(i, dummy.matrix);
+      }
+      
+      barMesh.instanceMatrix.needsUpdate = true;
+      barMat.opacity += (chartWeight * 0.95 - barMat.opacity) * 0.12;
+      barMesh.rotation.y += 0.005 + sHigh * 0.01;
+    } else {
+      barMat.opacity += (0 - barMat.opacity) * 0.12;
+    }
+
+    renderer.render(scene, camera);
+  }
+  renderer.setAnimationLoop(render);
+})();
+</script>
+</body>
+</html>
