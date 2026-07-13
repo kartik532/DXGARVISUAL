@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Audio Reactive Orb & Sakura Bloom</title>
 <style>
   html, body {
@@ -11,7 +12,7 @@
     font-family: 'Segoe UI', system-ui, sans-serif;
   }
   #canvas-wrap { position: fixed; inset: 0; }
-  canvas { display: block; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
 
   #startScreen {
     position: fixed;
@@ -67,7 +68,7 @@
     display: none;
   }
 
-  /* ---- AR-only overlay (shown via dom-overlay while an AR session is active) ---- */
+  /* ---- AR-only overlay ---- */
   #arOverlay { display: none; }
   body.ar-active #arOverlay { display: block; }
   body.ar-active #startScreen { display: none; }
@@ -106,7 +107,6 @@
   }
   #exitArBtn:hover { background: rgba(255, 80, 80, 0.25); }
 
-  /* ---- Persistent AR entry button, available from the normal 3D view in any mode ---- */
   #arToggleBtn {
     position: fixed;
     bottom: 18px; right: 18px;
@@ -224,33 +224,34 @@
 
   // ---------- Three.js setup ----------
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 100);
   camera.position.set(0, 0, 6);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Capped at 1.5 to eliminate rendering lag on high-DPI mobiles
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
   wrap.appendChild(renderer.domElement);
 
-  // ---------- World root: everything the AR camera "places" on a scanned surface ----------
-  // In normal (non-AR) 3D mode this just sits at the origin as before.
-  // In AR mode it starts hidden and snaps to the tapped surface point.
   const worldRoot = new THREE.Group();
   scene.add(worldRoot);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  function resizeContainer() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+    renderer.setSize(w, h);
+  }
+  window.addEventListener('resize', resizeContainer);
+  window.addEventListener('orientationchange', () => setTimeout(resizeContainer, 200));
 
   const orbGroup = new THREE.Group();
   worldRoot.add(orbGroup);
 
-  // ---------- Chaotic scribble-cloud (curl-noise particle trails) ----------
-  const PARTICLE_COUNT = 480;
-  const TRAIL_LEN = 13;
+  // ---------- Chaotic scribble-cloud ----------
+  const PARTICLE_COUNT = 300; // Scaled down slightly for smooth tracking consistency on mobile
+  const TRAIL_LEN = 10;
   const SEG_PER_PARTICLE = TRAIL_LEN - 1;
 
   const particles = [];
@@ -303,7 +304,7 @@
   orbGroup.add(glowWireMesh);
 
   function makeGlowTexture() {
-    const size = 256;
+    const size = 128; // Reduced canvas allocation footprints
     const cnv = document.createElement('canvas');
     cnv.width = cnv.height = size;
     const ctx = cnv.getContext('2d');
@@ -331,7 +332,7 @@
   const core = coreSprite;
 
   // ---------- Ember sparks ----------
-  const SPARK_COUNT = 140;
+  const SPARK_COUNT = 90; 
   const sparkData = [];
   const sparkPositions = new Float32Array(SPARK_COUNT * 3);
   for (let i = 0; i < SPARK_COUNT; i++) {
@@ -346,7 +347,7 @@
     });
   }
   function makeSparkTexture() {
-    const size = 64;
+    const size = 32;
     const cnv = document.createElement('canvas');
     cnv.width = cnv.height = size;
     const ctx = cnv.getContext('2d');
@@ -372,7 +373,7 @@
   orbGroup.add(sparkPoints);
 
   // ---------- Fluid Venom Metaballs ----------
-  const VENOM_BALL_COUNT = 4; // Tighter, more cohesive liquid structure
+  const VENOM_BALL_COUNT = 4;
   const venomBalls = [];
   for (let i = 0; i < VENOM_BALL_COUNT; i++) {
     venomBalls.push({
@@ -418,29 +419,17 @@
       }
 
       float map(vec3 p) {
-        // Core liquid body
         float d = length(p) - (1.0 + uBass * 0.2);
-
-        // Blend orbiting blobs into the core smoothly
         for (int i = 0; i < ${VENOM_BALL_COUNT}; i++) {
           float di = length(p - uBallPos[i]) - uBallRadius[i];
           d = smin(d, di, 0.6); 
         }
-
-        // --- NEW MASSIVE SPIKE LOGIC ---
-        // Thicker frequency allows for longer stretch without breaking apart
         float freq = 2.5; 
         float timeSp = uTime * 2.0;
-        
         float flow = sin(p.x * freq + timeSp) * cos(p.y * freq - timeSp * 0.8) * sin(p.z * freq + timeSp * 1.1);
-        
-        // Massive amplitude for long tendrils
         float spikeAmp = 0.2 + uHigh * 2.5; 
         float spikes = flow * spikeAmp;
-
         d -= spikes;
-
-        // Safely scale down the raymarching steps so the extreme spikes don't clip
         return d * 0.25; 
       }
 
@@ -461,12 +450,12 @@
         vec3 pos = ro;
         bool hit = false;
         
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 60; i++) { // Optimization: lower iterations for performance overheads
           pos = ro + rd * dist;
           float d = map(pos);
-          if (abs(d) < 0.002) { hit = true; break; } 
+          if (abs(d) < 0.003) { hit = true; break; } 
           dist += d;
-          if (dist > 15.0) break;
+          if (dist > 12.0) break;
         }
         if (!hit) discard;
 
@@ -481,22 +470,19 @@
         
         vec3 base = vec3(0.005, 0.01, 0.01); 
         vec3 rim = vec3(0.2, 0.5, 0.8) * fresnel * (0.3 + uHigh * 0.7); 
-        
         vec3 col = base * (0.1 + diff * 0.9) + spec * vec3(0.8, 0.9, 1.0) * (0.5 + uHigh * 0.5) + rim;
-        
         gl_FragColor = vec4(col, uOpacity);
       }
     `,
   });
-  const venomGeo = new THREE.PlaneGeometry(10, 10); // Slightly larger plane to fit the massive spikes
+  const venomGeo = new THREE.PlaneGeometry(10, 10); 
   const venomMesh = new THREE.Mesh(venomGeo, venomMaterial);
-  venomMesh.position.z = 0;
   venomMesh.visible = false;
   worldRoot.add(venomMesh);
 
-  // ---------- Pink Sakura Bloom / Quantity Spawner ----------
+  // ---------- Pink Sakura Bloom ----------
   function makeSakuraTexture() {
-    const size = 256;
+    const size = 128;
     const cnv = document.createElement('canvas');
     cnv.width = cnv.height = size;
     const ctx = cnv.getContext('2d');
@@ -522,21 +508,11 @@
       ctx.fill();
       ctx.restore();
     }
-    for (let i = 0; i < 14; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = Math.random() * size * 0.05;
-      const rad = size * (0.012 + Math.random() * 0.02);
-      ctx.beginPath();
-      ctx.arc(Math.cos(a) * r, Math.sin(a) * r, rad, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,240,245,0.95)';
-      ctx.fill();
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
     return new THREE.CanvasTexture(cnv);
   }
   
   const sakuraTex = makeSakuraTexture();
-  const SAKURA_COUNT = 180;
+  const SAKURA_COUNT = 100;
   const sakuraFlowers = [];
   const sakuraGroup = new THREE.Group();
   
@@ -574,8 +550,8 @@
   sakuraCore.scale.set(1.4, 1.4, 1.4);
   sakuraGroup.add(sakuraCore);
 
-  // ---------- True 3D Instanced Mesh Chart Audio Visualizer ----------
-  const BAR_COUNT = 64;
+  // ---------- True 3D Instanced Mesh Chart ----------
+  const BAR_COUNT = 48;
   const barGeo = new THREE.BoxGeometry(0.1, 1, 0.1);
   barGeo.translate(0, 0.5, 0); 
   const barMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 });
@@ -592,7 +568,7 @@
   worldRoot.add(barMesh);
   const rainbowColor = new THREE.Color();
 
-  // ---------- AR reticle (surface-scan indicator) ----------
+  // ---------- AR reticle ----------
   const reticleGeo = new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI / 2);
   const reticleMat = new THREE.MeshBasicMaterial({ color: 0xcfc8ff, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
   const reticle = new THREE.Mesh(reticleGeo, reticleMat);
@@ -686,18 +662,24 @@
   });
 
   // ---------- Audio initialization ----------
-  let analyser, dataArray, bufferLength;
+  let audioCtx, analyser, dataArray, bufferLength;
   let audioReady = false;
 
   async function initAudio() {
-    if (audioReady) return true;
+    if (audioReady) {
+      // Vital WebXR optimization: Resume mic if device canvas switches focus suspended it
+      if (audioCtx && audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+      return true;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const source = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.6;
+      analyser.fftSize = 256; // Reduced frequency bin counts inside mobile tracks
+      analyser.smoothingTimeConstant = 0.5;
       bufferLength = analyser.frequencyBinCount;
       dataArray = new Uint8Array(bufferLength);
       source.connect(analyser);
@@ -726,9 +708,6 @@
   let inAR = false;
   let arSupported = false;
 
-  // ---- Plain 3D view (no AR) ----
-  // Whatever visual mode is currently selected (see modeBar above) keeps playing;
-  // entering/exiting AR never resets it, so AR works the same in every mode.
   startBtn.addEventListener('click', async () => {
     const ok = await initAudio();
     if (ok) {
@@ -744,8 +723,6 @@
       } catch (e) {
         arSupported = false;
       }
-    } else {
-      arSupported = false;
     }
     if (!arSupported) {
       arBtn.style.display = 'none';
@@ -755,8 +732,6 @@
   }
   checkARSupport();
 
-  // Shared entry point used both by the start-screen button and by the
-  // persistent "Enter AR" button, so AR can be launched from any mode at any time.
   async function enterAR() {
     const ok = await initAudio();
     if (!ok) return;
@@ -789,9 +764,14 @@
     document.body.classList.add('ar-active');
     document.getElementById('startScreen').style.display = 'none';
     arToggleBtn.style.display = 'none';
-    placeHint.textContent = 'Move your phone to scan a surface, then tap to place';
+    placeHint.textContent = 'Move phone to scan floor/surface, then tap to place';
     placeHint.style.display = 'block';
     hud.style.display = 'none';
+
+    // Verify audio remains streaming inside XR pipeline initialization
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
 
     xrSession.addEventListener('select', onARSelect);
     xrSession.addEventListener('end', onARSessionEnded);
@@ -799,12 +779,15 @@
 
   function onARSelect() {
     if (!reticle.visible) return;
-    worldRoot.position.setFromMatrixPosition(reticle.matrix);
-    worldRoot.quaternion.setFromRotationMatrix(reticle.matrix);
+    
+    // Performance improvement: Set matrices directly instead of decomposure iterations
+    worldRoot.matrix.copy(reticle.matrix);
+    worldRoot.matrix.decompose(worldRoot.position, worldRoot.quaternion, worldRoot.scale);
     worldRoot.scale.set(0.35, 0.35, 0.35);
+    
     worldRoot.visible = true;
     arPlaced = true;
-    placeHint.textContent = 'Placed! Tap another surface point to move it';
+    placeHint.textContent = 'Placed! Tap another point to re-position';
   }
 
   function onARSessionEnded() {
@@ -818,12 +801,12 @@
     worldRoot.position.set(0, 0, 0);
     worldRoot.quaternion.identity();
     worldRoot.scale.set(1, 1, 1);
-    // Return to the normal 3D view (not the start screen) so whichever mode
-    // was playing keeps playing, with the option to re-enter AR at any time.
+    
     document.getElementById('startScreen').style.display = 'none';
     if (arSupported) arToggleBtn.style.display = 'block';
     hud.style.display = audioReady ? 'block' : 'none';
     xrSession = null;
+    resizeContainer();
   }
 
   exitArBtn.addEventListener('click', () => {
@@ -831,15 +814,14 @@
   });
 
   function getBands() {
-    if (!audioReady) return { bass: 0, mid: 0, high: 0, overall: 0 };
+    if (!audioReady || !analyser) return { bass: 0, mid: 0, high: 0, overall: 0 };
     analyser.getByteFrequencyData(dataArray);
     const n = bufferLength;
-    const bassEnd = Math.floor(n * 0.08);
-    const midEnd = Math.floor(n * 0.35);
+    const bassEnd = Math.floor(n * 0.12);
+    const midEnd = Math.floor(n * 0.45);
 
     let bass = 0, mid = 0, high = 0;
-    
-    const noiseGate = 15; 
+    const noiseGate = 10; 
 
     for (let i = 0; i < bassEnd; i++) bass += Math.max(0, dataArray[i] - noiseGate);
     for (let i = bassEnd; i < midEnd; i++) mid += Math.max(0, dataArray[i] - noiseGate);
@@ -854,10 +836,10 @@
     overall /= n;
 
     return {
-      bass: Math.min(1, bass / 240),
-      mid: Math.min(1, mid / 240),
-      high: Math.min(1, high / 240),
-      overall: Math.min(1, overall / 240)
+      bass: Math.min(1, bass / 220),
+      mid: Math.min(1, mid / 220),
+      high: Math.min(1, high / 220),
+      overall: Math.min(1, overall / 220)
     };
   }
 
@@ -874,7 +856,11 @@
   let bounceY = 0;
 
   function render(timestamp, frame) {
-    // ---- WebXR hit-test: find real-world surfaces and drive the placement reticle ----
+    // Persistent stream validation checks during active XR sessions
+    if (inAR && audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+
     if (frame) {
       const referenceSpace = renderer.xr.getReferenceSpace();
       const session = renderer.xr.getSession();
@@ -902,7 +888,7 @@
     }
 
     const t = clock.getElapsedTime();
-    const dt = t - lastTime;
+    const dt = Math.min(t - lastTime, 0.1); // Clamp delta time steps to prevent thread micro-stutters
     lastTime = t;
     
     clockElapsedRef.value = t;
@@ -962,7 +948,7 @@
 
     const posArr = wireGeometry.attributes.position.array;
     const colArr = wireGeometry.attributes.color.array;
-    let p = 0, c = 0;
+    let pIdx = 0, cIdx = 0;
     const rainbowW = modeWeight.rainbow;
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -1007,10 +993,10 @@
       }
 
       for (let s = 0; s < SEG_PER_PARTICLE; s++) {
-        posArr[p++] = h[s*3];     posArr[p++] = h[s*3+1];     posArr[p++] = h[s*3+2];
-        posArr[p++] = h[(s+1)*3]; posArr[p++] = h[(s+1)*3+1]; posArr[p++] = h[(s+1)*3+2];
-        colArr[c++] = cr; colArr[c++] = cg; colArr[c++] = cb;
-        colArr[c++] = cr; colArr[c++] = cg; colArr[c++] = cb;
+        posArr[pIdx++] = h[s*3];     posArr[pIdx++] = h[s*3+1];     posArr[pIdx++] = h[s*3+2];
+        posArr[pIdx++] = h[(s+1)*3]; posArr[pIdx++] = h[(s+1)*3+1]; posArr[pIdx++] = h[(s+1)*3+2];
+        colArr[cIdx++] = cr; colArr[cIdx++] = cg; colArr[cIdx++] = cb;
+        colArr[cIdx++] = cr; colArr[cIdx++] = cg; colArr[cIdx++] = cb;
       }
     }
     wireGeometry.attributes.position.needsUpdate = true;
@@ -1091,7 +1077,7 @@
       venomUniforms.uOpacity.value += (0 - venomUniforms.uOpacity.value) * 0.12;
     }
 
-    // ---- Optimized Pink Sakura Bloom / Falling Petals ----
+    // ---- Pink Sakura Bloom ----
     sakuraGroup.visible = sakuraWeight > 0.01;
     if (sakuraGroup.visible) {
       const activeQuantity = Math.floor(SAKURA_COUNT * (0.1 + Math.min(1, sHigh + sMid) * 0.9)); 
@@ -1115,7 +1101,6 @@
         const targetOpacity = (index < activeQuantity) ? alphaFade * sakuraWeight * 0.95 : 0;
         
         f.sprite.material.opacity += (targetOpacity - f.sprite.material.opacity) * 0.1;
-        f.sprite.scale.set(f.baseScale, f.baseScale, 1);
       });
 
       const sCore = 1.1 + sBass * 1.5;
@@ -1133,25 +1118,20 @@
     barMesh.visible = chartWeight > 0.01;
     if (barMesh.visible && dataArray) {
       const bins = bufferLength || 1;
-      const usableStart = 2;
-      const usableEnd = Math.floor(bins * 0.75);
+      const usableStart = 1;
+      const usableEnd = Math.floor(bins * 0.8);
       
       for (let i = 0; i < BAR_COUNT; i++) {
         const tNorm = i / (BAR_COUNT - 1);
-        const binIndex = usableStart + Math.floor(Math.pow(tNorm, 1.5) * (usableEnd - usableStart));
-        
-        const raw = Math.max(0, (dataArray[binIndex] - 15)) / 240; 
+        const binIndex = usableStart + Math.floor(Math.pow(tNorm, 1.3) * (usableEnd - usableStart));
+        const raw = Math.max(0, (dataArray[binIndex] - 10)) / 220; 
         
         barHeights[i] += (raw - barHeights[i]) * 0.4;
-        
         const h = Math.max(0.01, barHeights[i] * 3.2);
         const angle = (i / BAR_COUNT) * Math.PI * 2;
         const ringRadius = 1.6 + sBass * 0.3;
         
-        const x = Math.cos(angle) * ringRadius;
-        const z = Math.sin(angle) * ringRadius;
-        
-        dummy.position.set(x, -1.2, z);
+        dummy.position.set(Math.cos(angle) * ringRadius, -1.2, Math.sin(angle) * ringRadius);
         dummy.scale.set(1, h, 1);
         dummy.updateMatrix();
         barMesh.setMatrixAt(i, dummy.matrix);
